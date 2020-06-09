@@ -332,8 +332,8 @@ export const stringResources = {
   },
   paySlip_PensionTax: {
     en: '  Pension:',
-    ru: '  Подоходный:',
-    be: '  Падаходны:'
+    ru: '  Пенсионный:',
+    be: '  Пенсійны:'
   },
   paySlip_TradeUnionTax: {
     en: '  Trade-union:',
