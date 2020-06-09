@@ -1,4 +1,4 @@
-import { MachineConfig, assign, StateMachine } from "xstate";
+import { MachineConfig, assign, StateMachine, sendParent } from "xstate";
 import { Platform, IDate } from "./types";
 import { Semaphore } from "./semaphore";
 
@@ -94,6 +94,10 @@ export const botMachineConfig = (calendarMachine: StateMachine<ICalendarMachineC
       dateBegin: { year: new Date().getFullYear(), month: 0 },
       dateEnd: { year: new Date().getFullYear(), month: 11 },
       dateBegin2: { year: new Date().getFullYear(), month: 0 },
+    },
+    on: {
+        ENTER_TEXT: { actions: [sendParent('UNHANDLED_COMMAND')] },
+        MAIN_MENU: { actions: [sendParent('UNHANDLED_COMMAND')] },
     },
     states: {
       init: {
