@@ -275,97 +275,97 @@ export const stringResources = {
     ru: 'д.',
     be: 'д.'
   },
-  paySlip_Department: {
+  payslipDepartment: {
     en: 'Department:',
     ru: 'Подразделение:',
     be: 'Падраздзяленне:'
   },
-  paySlip_Position: {
+  payslipPosition: {
     en: 'Position:',
     ru: 'Должность:',
     be: 'Пасада:'
   },
-  paySlip_Salary: {
+  payslipSalary: {
     en: 'Salary:',
     ru: 'Оклад:',
     be: 'Аклад:'
   },
-  paySlip_Hpr: {
+  payslipHpr: {
     en: 'HPR:',
     ru: 'ЧТС:',
     be: 'ГТС:'
   },
-  paySlip_Accrued: {
+  payslipAccrued: {
     en: 'Accrued:',
     ru: 'Начислено:',
     be: 'Налічана:'
   },
-  paySlip_Netsalary: {
+  payslipNetsalary: {
     en: 'Net salary:',
     ru: 'Начислено:',
     be: 'Зарплата чыстымі:'
   },
-  paySlip_Deductions: {
+  payslipDeductions: {
     en: '  Deductions:',
     ru: '  Удержания:',
     be: '  Ўтрымання:'
   },
-  paySlip_Advance: {
+  payslipAdvance: {
     en: '  Advance:',
     ru: '  Аванс:',
     be: '  Аванс:'
   },
-  paySlip_Payroll: {
+  payslipPayroll: {
     en: '  PayRoll:',
     ru: '  К выдаче:',
     be: '  Да выдачы:'
   },
-  paySlip_Taxes: {
+  payslipTaxes: {
     en: 'Taxes:',
     ru: 'Налоги:',
     be: 'Падаткi:'
   },
-  paySlip_Incometax: {
+  payslipIncometax: {
     en: '  Income:',
     ru: '  Подоходный:',
     be: '  Падаходны:'
   },
-  paySlip_PensionTax: {
+  payslipPensionTax: {
     en: '  Pension:',
-    ru: '  Пенсионный:',
-    be: '  Пенсійны:'
+    ru: '  Подоходный:',
+    be: '  Падаходны:'
   },
-  paySlip_TradeUnionTax: {
+  payslipTradeUnionTax: {
     en: '  Trade-union:',
     ru: '  Профсоюзный:',
     be: '  Прафсаюзны:'
   },
-  paySlip_Privilages: {
+  payslipPrivilages: {
     en: 'Privilages:',
     ru: 'Льготы:',
     be: 'Льготы:'
   },
-  paySlip_DeductionsWOSpace: {
+  payslipDeductionsWOSpace: {
     en: 'Deductions:',
     ru: 'Удержания:',
     be: 'Ўтрымання:'
   },
-  paySlip_AdvanceWOSpace: {
+  payslipAdvanceWOSpace: {
     en: 'Advance:',
     ru: 'Аванс:',
     be: 'Аванс:'
   },
-  paySlip_TaxDeduction: {
+  payslipTaxDeduction: {
     en: 'Tax deduction:',
     ru: 'Вычеты:',
     be: 'Вылiкi:'
   },
-  paySlip_Period: {
+  payslipPeriod: {
     en: 'Period: ',
     ru: 'Период: ',
     be: 'Перыяд: '
   },
-  paySlip_Currency: {
+  payslipCurrency: {
     en: (currency: string, currencyRate?: ICurrencyRate) => 'Currency: ' + (
       currencyRate
         ? `${currency}, exchange rate ${currencyRate.rate.toFixed(2)} on ${date2str(currencyRate.date, 'DD.MM.YY')}`
@@ -379,7 +379,7 @@ export const stringResources = {
         ? `${currency}, курс ${currencyRate.rate.toFixed(2)} на ${date2str(currencyRate.date, 'DD.MM.YY')}`
         : 'Беларускі рубель')
   },
-  paySlip_CurrencyCompare: {
+  payslipCurrencyCompare: {
     en: (currency: string, currencyRate?: ICurrencyRate, currencyRate2?: ICurrencyRate) => 'Currency: ' + (
       currencyRate && currencyRate2
         ? `${currency}\exchange rate ${currencyRate.rate.toFixed(2)} on ${date2str(currencyRate.date, 'DD.MM.YY')}\n${currencyRate2.rate.toFixed(2)} on ${date2str(currencyRate2.date, 'DD.MM.YY')}`
@@ -393,7 +393,7 @@ export const stringResources = {
         ? `${currency}\nкурс ${currencyRate.rate.toFixed(2)} на ${date2str(currencyRate.date, 'DD.MM.YY')}\n${currencyRate2.rate.toFixed(2)} на ${date2str(currencyRate2.date, 'DD.MM.YY')}`
         : 'Беларускі рубель')
   },
-  paySlip_CurrencyPeriod: {
+  payslipCurrencyPeriod: {
     en: (db: IDate, de: IDate, db2: IDate, de2: IDate) => 'Period:\n' + (de.year !== db.year || de.month !== db.month
         ? `${db.month + 1}.${db.year}-${de.month + 1}.${de.year}`
         : `${new Date(db.year, db.month).toLocaleDateString('en', { month: 'long', year: 'numeric' })}`

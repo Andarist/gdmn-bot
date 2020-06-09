@@ -87,9 +87,9 @@ export class Bot {
   private _botStarted = new Date();
   private _callbacksReceived = 0;
   private _customerAccDeds: { [customerID: string]: FileDB<IAccDed> } = {};
-  private _viber: any;
-  private _viberCalendarMachine: StateMachine<ICalendarMachineContext, any, CalendarMachineEvent>;
-  private _viberMachine: StateMachine<IBotMachineContext, any, BotMachineEvent>;
+  private _viber: any = undefined;
+  private _viberCalendarMachine: StateMachine<ICalendarMachineContext, any, CalendarMachineEvent> | undefined = undefined;
+  private _viberMachine: StateMachine<IBotMachineContext, any, BotMachineEvent> | undefined = undefined;
   private _logger: Logger;
   private _log: ILogger;
 
@@ -253,6 +253,7 @@ export class Bot {
       await semaphore?.acquire();
       try {
         const s = await this.getPayslip(customerId, employeeId, payslipType, language ?? 'ru', currency ?? 'BYN', dateBegin, dateEnd, dateBegin2);
+        //TODO: криво!
         reply({ en: null, ru: s, be: null })({ ...rest, semaphore: new Semaphore() });
       } finally {
         semaphore?.release();
@@ -400,129 +401,138 @@ export class Bot {
     /**************************************************************/
     /**************************************************************/
 
-    const replyViber = (s: ILocString | undefined, menu?: Menu, ...args: any[]) => async ({ chatId, semaphore }: Pick<IBotMachineContext, 'platform' | 'chatId' | 'semaphore'>) => {
-      if (!semaphore) {
-        this._logger.error(chatId, undefined, 'No semaphore');
-        return;
-      }
+    if (viberToken) {
 
-      if (!chatId) {
-        this._log.error('Invalid chatId');
-        return;
-      }
-
-      const language = this._accountLanguage[this.getUniqId('VIBER', chatId)] ?? 'ru';
-      const keyboard = menu && this._menu2ViberMenu(menu, language);
-      const text = s && getLocString(s, language, ...args);
-
-      await semaphore.acquire();
-      try {
-        if (keyboard) {
-          const res = await this._viber.sendMessage({ id: chatId }, [new TextMessage(text), new KeyboardMessage(keyboard)]);
-          if (!Array.isArray(res)) {
-            this._logger.warn(chatId, undefined, JSON.stringify(res));
-          }
-        } else {
-          await this._viber.sendMessage({ id: chatId }, [new TextMessage(text)]);
+      const replyViber = (s: ILocString | undefined, menu?: Menu, ...args: any[]) => async ({ chatId, semaphore }: Pick<IBotMachineContext, 'platform' | 'chatId' | 'semaphore'>) => {
+        if (!semaphore) {
+          this._logger.error(chatId, undefined, 'No semaphore');
+          return;
         }
-      } catch (e) {
-        this._logger.error(chatId, undefined, e);
-      } finally {
-        semaphore.release();
-      }
+
+        if (!chatId) {
+          this._log.error('Invalid chatId');
+          return;
+        }
+
+        const language = this._accountLanguage[this.getUniqId('VIBER', chatId)] ?? 'ru';
+        const keyboard = menu && this._menu2ViberMenu(menu, language);
+        const text = s && getLocString(s, language, ...args);
+
+        await semaphore.acquire();
+        try {
+          if (keyboard) {
+            const res = await this._viber.sendMessage({ id: chatId }, [new TextMessage(text), new KeyboardMessage(keyboard)]);
+            if (!Array.isArray(res)) {
+              this._logger.warn(chatId, undefined, JSON.stringify(res));
+            }
+          } else {
+            await this._viber.sendMessage({ id: chatId }, [new TextMessage(text)]);
+          }
+        } catch (e) {
+          this._logger.error(chatId, undefined, e);
+        } finally {
+          semaphore.release();
+        }
+      };
+
+      this._viberCalendarMachine = Machine<ICalendarMachineContext, CalendarMachineEvent>(calendarMachineConfig,
+        calendarMachineOptions(replyViber));
+
+      this._viberMachine = Machine<IBotMachineContext, BotMachineEvent>(botMachineConfig(this._viberCalendarMachine),
+        machineOptions(replyViber));
+
+      this._viber = new ViberBot({
+        authToken: viberToken,
+        name: 'Моя зарплата',
+        avatar: ''
+      });
+
+      // this._viber.on(BotEvents.SUBSCRIBED, async (response: any) => {
+      //   if (!response?.userProfile) {
+      //     console.error('Invalid chat context');
+      //   } else {
+      //     this.start(response.userProfile.id.toString());
+      //   }
+      // });
+
+      this._viber.onError( (...args: any[]) => this._log.error(...args) );
+
+      this._viber.on(BotEvents.SUBSCRIBED, (response: any) => {
+        const chatId = response.userProfile.id;
+
+        this._logger.info(chatId, undefined, `SUBSCRIBED ${chatId}`);
+
+        if (!chatId) {
+          this._log.error('Invalid viber response');
+        } else {
+          this.onUpdate({
+            platform: 'VIBER',
+            chatId,
+            type: 'COMMAND',
+            body: '/start',
+            language: str2Language(response.userProfile.language)
+          });
+        }
+      });
+
+      // команда меню
+      this._viber.onTextMessage(/(\.[A-Za-z0-9_]+)|(\{.+\})/, (message: any, response: any) => {
+        const chatId = response.userProfile.id;
+
+        if (!chatId) {
+          this._log.error('Invalid viber response');
+        } else {
+          this.onUpdate({
+            platform: 'VIBER',
+            chatId,
+            type: 'ACTION',
+            body: message.text,
+            language: str2Language(response.userProfile.language)
+          });
+        }
+      });
+
+      this._viber.onTextMessage(/.+/, (message: any, response: any) => {
+        const chatId = response.userProfile.id;
+
+        if (!chatId) {
+          this._log.error('Invalid viber response');
+        } else {
+          this.onUpdate({
+            platform: 'VIBER',
+            chatId,
+            type: 'MESSAGE',
+            body: message.text,
+            language: str2Language(response.userProfile.language)
+          });
+        }
+      });
+
+      this._viber.on(BotEvents.UNSUBSCRIBED, async (response: any) => {
+        //TODO: проверить когда вызывается это событие
+        const chatId = response.userProfile.id;
+        this._viberAccountLink.delete(chatId);
+        delete this._service[this.getUniqId('VIBER', chatId)];
+        this._log.info(`User unsubscribed, ${response}`);
+      });
+
+      /*
+      this._viber.on(BotEvents.CONVERSATION_STARTED, async (response: any, isSubscribed: boolean) => {
+        if (!response?.userProfile) {
+          console.error('Invalid chat context');
+        } else {
+          this.start(response.userProfile.id.toString(),
+          `Здравствуйте${response?.userProfile.name ? ', ' + response.userProfile.name : ''}!\nДля подписки введите любое сообщение.`);
+        }
+      });
+      */
+    }
+
+    return {
+      Type: 'keyboard',
+      Buttons,
+      DefaultHeight: false
     };
-
-    this._viberCalendarMachine = Machine<ICalendarMachineContext, CalendarMachineEvent>(calendarMachineConfig,
-      calendarMachineOptions(replyViber));
-
-    this._viberMachine = Machine<IBotMachineContext, BotMachineEvent>(botMachineConfig(this._viberCalendarMachine),
-      machineOptions(replyViber));
-
-    this._viber = new ViberBot({
-      authToken: viberToken,
-      name: 'Моя зарплата',
-      avatar: ''
-    });
-
-    // this._viber.on(BotEvents.SUBSCRIBED, async (response: any) => {
-    //   if (!response?.userProfile) {
-    //     console.error('Invalid chat context');
-    //   } else {
-    //     this.start(response.userProfile.id.toString());
-    //   }
-    // });
-
-    this._viber.onError( (...args: any[]) => this._log.error(...args) );
-
-    this._viber.on(BotEvents.SUBSCRIBED, (response: any) => {
-      const chatId = response.userProfile.id;
-
-      this._logger.info(chatId, undefined, `SUBSCRIBED ${chatId}`);
-
-      if (!chatId) {
-        this._log.error('Invalid viber response');
-      } else {
-        this.onUpdate({
-          platform: 'VIBER',
-          chatId,
-          type: 'COMMAND',
-          body: '/start',
-          language: str2Language(response.userProfile.language)
-        });
-      }
-    });
-
-    // команда меню
-    this._viber.onTextMessage(/(\.[A-Za-z0-9_]+)|(\{.+\})/, (message: any, response: any) => {
-      const chatId = response.userProfile.id;
-
-      if (!chatId) {
-        this._log.error('Invalid viber response');
-      } else {
-        this.onUpdate({
-          platform: 'VIBER',
-          chatId,
-          type: 'ACTION',
-          body: message.text,
-          language: str2Language(response.userProfile.language)
-        });
-      }
-    });
-
-    this._viber.onTextMessage(/.+/, (message: any, response: any) => {
-      const chatId = response.userProfile.id;
-
-      if (!chatId) {
-        this._log.error('Invalid viber response');
-      } else {
-        this.onUpdate({
-          platform: 'VIBER',
-          chatId,
-          type: 'MESSAGE',
-          body: message.text,
-          language: str2Language(response.userProfile.language)
-        });
-      }
-    });
-
-    this._viber.on(BotEvents.UNSUBSCRIBED, async (response: any) => {
-      //TODO: проверить когда вызывается это событие
-      const chatId = response.userProfile.id;
-      this._viberAccountLink.delete(chatId);
-      delete this._service[this.getUniqId('VIBER', chatId)];
-      this._log.info(`User unsubscribed, ${response}`);
-    });
-
-    /*
-    this._viber.on(BotEvents.CONVERSATION_STARTED, async (response: any, isSubscribed: boolean) => {
-      if (!response?.userProfile) {
-        console.error('Invalid chat context');
-      } else {
-        this.start(response.userProfile.id.toString(),
-        `Здравствуйте${response?.userProfile.name ? ', ' + response.userProfile.name : ''}!\nДля подписки введите любое сообщение.`);
-      }
-    });
-    */
   }
 
   get viber() {
@@ -808,24 +818,24 @@ export class Bot {
       //employeeName,
       periodName,
       currencyName,
-      stringResources.paySlip_Department,
+      stringResources.payslipDepartment,
       getLName(data.department, [lng]),
-      stringResources.paySlip_Position,
+      stringResources.payslipPosition,
       getLName(data.position, [lng]),
-      [stringResources.paySlip_Salary, data.salary],
-      [stringResources.paySlip_Hpr, data.hourrate],
+      [stringResources.payslipSalary, data.salary],
+      [stringResources.payslipHpr, data.hourrate],
       '=',
-      [stringResources.paySlip_Accrued, accruals],
+      [stringResources.payslipAccrued, accruals],
       '=',
-      [stringResources.paySlip_Netsalary, accruals - taxes],
-      [stringResources.paySlip_Deductions, deds],
-      [stringResources.paySlip_Advance, advances],
-      [stringResources.paySlip_Payroll, data.saldo?.s],
+      [stringResources.payslipNetsalary, accruals - taxes],
+      [stringResources.payslipDeductions, deds],
+      [stringResources.payslipAdvance, advances],
+      [stringResources.payslipPayroll, data.saldo?.s],
       '=',
-      [stringResources.paySlip_Taxes, taxes],
-      [stringResources.paySlip_Incometax, incomeTax],
-      [stringResources.paySlip_PensionTax, pensionTax],
-      [stringResources.paySlip_TradeUnionTax, tradeUnionTax]
+      [stringResources.payslipTaxes, taxes],
+      [stringResources.payslipIncometax, incomeTax],
+      [stringResources.payslipPensionTax, pensionTax],
+      [stringResources.payslipTradeUnionTax, tradeUnionTax]
     ];
   }
 
@@ -843,21 +853,21 @@ export class Bot {
       //employeeName,
       periodName,
       currencyName,
-      stringResources.paySlip_Salary,
+      stringResources.payslipSalary,
       [data.salary ?? 0, data2.salary ?? 0, (data2.salary ?? 0) - (data.salary ?? 0)],
-      stringResources.paySlip_Hpr,
+      stringResources.payslipHpr,
       [data.hourrate ?? 0, data2.hourrate ?? 0, (data2.hourrate ?? 0) - (data.hourrate ?? 0)],
       '=',
-      stringResources.paySlip_Accrued,
+      stringResources.payslipAccrued,
       [accruals, accruals2, accruals2 - accruals],
       '=',
-      stringResources.paySlip_Netsalary,
+      stringResources.payslipNetsalary,
       [accruals - taxes, accruals2 - taxes2, accruals2 - taxes2 - (accruals - taxes)],
       '=',
-      stringResources.paySlip_DeductionsWOSpace,
+      stringResources.payslipDeductionsWOSpace,
       [deds, deds2, deds2 - deds],
       '=',
-      stringResources.paySlip_Taxes,
+      stringResources.payslipTaxes,
       [taxes, taxes2, taxes2 - taxes],
     ];
   }
@@ -882,34 +892,34 @@ export class Bot {
       //employeeName,
       periodName,
       currencyName,
-      stringResources.paySlip_Department,
+      stringResources.payslipDepartment,
       getLName(data.department, [lng]),
-      stringResources.paySlip_Position,
+      stringResources.payslipPosition,
       getLName(data.position, [lng]),
-      [stringResources.paySlip_Salary, data.salary],
-      [stringResources.paySlip_Hpr, data.hourrate],
+      [stringResources.payslipSalary, data.salary],
+      [stringResources.payslipHpr, data.hourrate],
       '=',
-      [stringResources.paySlip_Accrued, accruals],
+      [stringResources.payslipAccrued, accruals],
       accruals ? '=' : '',
       ...strAccruals,
       accruals ? '=' : '',
-      [stringResources.paySlip_DeductionsWOSpace, deds],
+      [stringResources.payslipDeductionsWOSpace, deds],
       deds ? '=' : '',
       ...strDeductions,
       deds ? '=' : '',
-      [stringResources.paySlip_AdvanceWOSpace, advances],
+      [stringResources.payslipAdvanceWOSpace, advances],
       advances ? '=' : '',
       ...strAdvances,
       advances ? '=' : '',
-      [stringResources.paySlip_Taxes, taxes],
+      [stringResources.payslipTaxes, taxes],
       taxes ? '=' : '',
       ...strTaxes,
       taxes ? '=' : '',
-      [stringResources.paySlip_TaxDeduction, taxDeds],
+      [stringResources.payslipTaxDeduction, taxDeds],
       taxDeds ? '=' : '',
       ...strTaxDeds,
       taxDeds ? '=' : '',
-      [stringResources.paySlip_Privilages, privilages],
+      [stringResources.payslipPrivilages, privilages],
       privilages ? '=' : '',
       ...strPrivilages,
       privilages ? '=' : ''
@@ -972,13 +982,13 @@ export class Bot {
     let s: Template;
 
     if (type !== 'COMPARE') {
-      const periodName = getLocString(stringResources.paySlip_Period, lng) + (de.year !== db.year || de.month !== db.month
+      const periodName = getLocString(stringResources.payslipPeriod, lng) + (de.year !== db.year || de.month !== db.month
         ? `${db.month + 1}.${db.year}-${de.month + 1}.${de.year}`
         : `${new Date(db.year, db.month).toLocaleDateString(lng, { month: 'long', year: 'numeric' })}`
       );
 
       //TODO: локализация!
-      const currencyName = getLocString(stringResources.paySlip_Currency, lng, currencyRate, currencyRate);
+      const currencyName = getLocString(stringResources.payslipCurrency, lng, currencyRate, currencyRate);
 
       s = type === 'CONCISE'
         ? this._formatShortPayslip(dataI, lng, periodName, currencyName)
@@ -1012,10 +1022,10 @@ export class Bot {
         dataII = this._calcPayslipByRate(dataII, currencyRate2.rate);
       }
 
-      const periodName = getLocString(stringResources.paySlip_CurrencyPeriod, lng, db, de, db2, de2);
+      const periodName = getLocString(stringResources.payslipCurrencyPeriod, lng, db, de, db2, de2);
 
       //TODO: локализация!
-      const currencyName = getLocString(stringResources.paySlip_CurrencyCompare, lng, currency, currencyRate, currencyRate2);
+      const currencyName = getLocString(stringResources.payslipCurrencyCompare, lng, currency, currencyRate, currencyRate2);
 
       s = this._formatComparativePayslip(dataI, dataII, lng, periodName, currencyName);
     }
@@ -1044,8 +1054,19 @@ export class Bot {
 
   createService(inPlatform: Platform, inChatId: string) {
     const uniqId = this.getUniqId(inPlatform, inChatId);
-    const service = (inPlatform === 'TELEGRAM' ? interpret(this._telegramMachine) : interpret(this._viberMachine))
-      .onTransition( (state, { type }) => {
+
+    let service;
+
+    if (inPlatform === 'TELEGRAM') {
+      service = interpret(this._telegramMachine);
+    } else {
+      if (!this._viberMachine) {
+        throw new Error('Viber machine is not defined!');
+      }
+      service = interpret(this._viberMachine);
+    }
+
+    service = service.onTransition( (state, { type }) => {
         const accountLinkDB = inPlatform === 'TELEGRAM' ? this._telegramAccountLink : this._viberAccountLink;
 
         this._logger.debug(inChatId, undefined, `State: ${state.toStrings().join('->')}, Event: ${type}`);
@@ -1189,7 +1210,16 @@ export class Bot {
     if (e) {
       service.send(e);
 
-      if (!service.state.changed) {
+      let childrenStateChanged = false;
+
+      for (const [_key, ch] of service.children) {
+        if (ch.state.changed) {
+          childrenStateChanged = true;
+          break;
+        }
+      }
+
+      if (!service.state.changed && !childrenStateChanged) {
         // мы каким-то образом попали в ситуацию, когда текущее состояние не
         // может принять вводимую информацию. например, пользователь
         // очистил чат или произошел сбой на стороне мессенджера и
